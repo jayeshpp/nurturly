@@ -11,21 +11,20 @@ import { endFeed, logMotion, logPee, startFeed, syncPendingEvents } from "@/lib/
 import { dayRangeUtcIso, formatDurationMs } from "@/lib/date";
 import type { FeedSide, MotionKind } from "@/lib/types";
 
-function msSince(isoUtc: string) {
-  return Date.now() - Date.parse(isoUtc);
-}
-
 function timeAgoShort(ms: number) {
-  const m = Math.max(0, Math.floor(ms / 60000));
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  return `${h}h ago`;
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
+  if (totalMin < 1) return "just now";
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h <= 0) return `${totalMin}m ago`;
+  if (m <= 0) return `${h}h ago`;
+  return `${h}h ${m}m ago`;
 }
 
 export default function DashboardClient() {
   const [motionOpen, setMotionOpen] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const ctx = useLiveQuery(async () => {
     const tenant_id = (await db.settings.get("tenant_id"))?.value ?? null;
@@ -86,8 +85,8 @@ export default function DashboardClient() {
 
   const feedRunningMs = useMemo(() => {
     if (!activeFeed) return null;
-    return msSince(activeFeed.start_time);
-  }, [activeFeed]);
+    return nowMs - Date.parse(activeFeed.start_time);
+  }, [activeFeed, nowMs]);
 
   useEffect(() => {
     void syncPendingEvents();
@@ -101,13 +100,10 @@ export default function DashboardClient() {
   }, []);
 
   useEffect(() => {
-    if (!activeFeed) return;
-    const t = window.setInterval(() => {
-      // just trigger re-render
-      setFeedOpen((v) => v);
-    }, 1000);
+    const intervalMs = activeFeed ? 1000 : 30_000;
+    const t = window.setInterval(() => setNowMs(Date.now()), intervalMs);
     return () => window.clearInterval(t);
-  }, [activeFeed]);
+  }, [Boolean(activeFeed)]);
 
   if (!ctx?.baby_id) {
     return (
@@ -155,7 +151,9 @@ export default function DashboardClient() {
     setMotionOpen(false);
   }
 
-  const lastFeedText = lastFeed ? timeAgoShort(msSince(lastFeed.end_time!)) : "—";
+  const lastFeedText = lastFeed
+    ? timeAgoShort(nowMs - Date.parse(lastFeed.end_time!))
+    : "—";
 
   return (
     <div className="min-h-screen bg-black text-white">

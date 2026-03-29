@@ -19,9 +19,13 @@ export function formatTimeLocal(isoUtc: string) {
 
 export function formatDurationMs(ms: number) {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const m = Math.floor(totalSec / 60);
+  const totalMin = Math.floor(totalSec / 60);
   const s = totalSec % 60;
-  if (m <= 0) return `${s}s`;
-  return `${m}m ${s}s`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+
+  if (h > 0) return `${h}h ${m}m`;
+  if (totalMin > 0) return `${totalMin}m ${s}s`;
+  return `${s}s`;
 }
 
