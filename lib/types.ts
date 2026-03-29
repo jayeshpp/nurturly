@@ -4,7 +4,7 @@ export type MotionKind = "liquid" | "normal" | "hard";
 export type FeedSide = "left" | "right" | "both";
 
 export type EventMetadata =
-  | { side?: FeedSide }
+  | { side?: FeedSide; paused_at?: string | null; paused_total_ms?: number }
   | { kind?: MotionKind }
   | Record<string, unknown>;
 

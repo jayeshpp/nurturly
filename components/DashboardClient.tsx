@@ -7,7 +7,15 @@ import { BigButton } from "@/components/BigButton";
 import { BottomSheet } from "@/components/BottomSheet";
 import { db } from "@/lib/db";
 import { hapticLight } from "@/lib/haptics";
-import { endFeed, logMotion, logPee, startFeed, syncPendingEvents } from "@/lib/offline/events";
+import {
+  endFeed,
+  logMotion,
+  logPee,
+  pauseFeed,
+  resumeFeed,
+  startFeed,
+  syncPendingEvents,
+} from "@/lib/offline/events";
 import { dayRangeUtcIso, formatDurationMs } from "@/lib/date";
 import type { FeedSide, MotionKind } from "@/lib/types";
 
@@ -37,7 +45,11 @@ export default function DashboardClient() {
     const row = await db.settings.get("baby_profile");
     if (!row?.value) return null;
     try {
-      return JSON.parse(row.value) as { id: string; name: string; birth_date: string };
+      return JSON.parse(row.value) as {
+        id: string;
+        name: string;
+        birth_date: string;
+      };
     } catch {
       return null;
     }
@@ -48,7 +60,10 @@ export default function DashboardClient() {
     const rows = await db.events.where("baby_id").equals(ctx.baby_id).toArray();
     return (
       rows
-        .filter((e) => e.type === "feed" && e.deleted_at == null && e.end_time == null)
+        .filter(
+          (e) =>
+            e.type === "feed" && e.deleted_at == null && e.end_time == null,
+        )
         .sort((a, b) => a.start_time.localeCompare(b.start_time))
         .at(-1) ?? null
     );
@@ -59,7 +74,10 @@ export default function DashboardClient() {
     const rows = await db.events.where("baby_id").equals(ctx.baby_id).toArray();
     return (
       rows
-        .filter((e) => e.type === "feed" && e.deleted_at == null && e.end_time != null)
+        .filter(
+          (e) =>
+            e.type === "feed" && e.deleted_at == null && e.end_time != null,
+        )
         .sort((a, b) => (a.end_time ?? "").localeCompare(b.end_time ?? ""))
         .at(-1) ?? null
     );
@@ -74,7 +92,7 @@ export default function DashboardClient() {
         e.deleted_at == null &&
         e.start_time >= startIso &&
         e.start_time <= endIso &&
-        e.end_time !== null
+        e.end_time !== null,
     );
     return {
       feed: inDay.filter((e) => e.type === "feed").length,
@@ -85,8 +103,30 @@ export default function DashboardClient() {
 
   const feedRunningMs = useMemo(() => {
     if (!activeFeed) return null;
-    return nowMs - Date.parse(activeFeed.start_time);
+    const meta = (
+      activeFeed.metadata && typeof activeFeed.metadata === "object"
+        ? (activeFeed.metadata as any)
+        : {}
+    ) as any;
+    const pausedAt = typeof meta.paused_at === "string" ? meta.paused_at : null;
+    const pausedTotal =
+      typeof meta.paused_total_ms === "number" ? meta.paused_total_ms : 0;
+    const endOfSegment = pausedAt ? Date.parse(pausedAt) : nowMs;
+    return Math.max(
+      0,
+      endOfSegment - Date.parse(activeFeed.start_time) - pausedTotal,
+    );
   }, [activeFeed, nowMs]);
+
+  const feedIsPaused = useMemo(() => {
+    if (!activeFeed) return false;
+    const meta = (
+      activeFeed.metadata && typeof activeFeed.metadata === "object"
+        ? (activeFeed.metadata as any)
+        : {}
+    ) as any;
+    return typeof meta.paused_at === "string" && meta.paused_at.length > 0;
+  }, [activeFeed]);
 
   useEffect(() => {
     void syncPendingEvents();
@@ -145,6 +185,18 @@ export default function DashboardClient() {
     await endFeed(activeFeed.id);
   }
 
+  async function onPauseFeed() {
+    if (!activeFeed) return;
+    hapticLight();
+    await pauseFeed(activeFeed.id);
+  }
+
+  async function onResumeFeed() {
+    if (!activeFeed) return;
+    hapticLight();
+    await resumeFeed(activeFeed.id);
+  }
+
   async function onMotion(kind: MotionKind) {
     hapticLight();
     await logMotion(kind);
@@ -176,25 +228,51 @@ export default function DashboardClient() {
           {activeFeed ? (
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-1">
-                <div className="text-sm font-semibold text-white">Active feed</div>
+                <div className="text-sm font-semibold text-white">
+                  Active feed
+                </div>
                 <div className="text-sm text-zinc-400">
                   Running:{" "}
                   <span className="font-semibold text-zinc-200">
                     {formatDurationMs(feedRunningMs ?? 0)}
                   </span>
                 </div>
+                {feedIsPaused ? (
+                  <div className="text-xs font-semibold text-amber-300">
+                    Paused
+                  </div>
+                ) : null}
               </div>
-              <button
-                onClick={onEndFeed}
-                className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black active:scale-[0.99]"
-              >
-                End feed
-              </button>
+              <div className="flex items-center gap-2">
+                {feedIsPaused ? (
+                  <button
+                    onClick={onResumeFeed}
+                    className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm font-semibold text-white active:scale-[0.99]"
+                  >
+                    Resume
+                  </button>
+                ) : (
+                  <button
+                    onClick={onPauseFeed}
+                    className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm font-semibold text-white active:scale-[0.99]"
+                  >
+                    Pause
+                  </button>
+                )}
+                <button
+                  onClick={onEndFeed}
+                  className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black active:scale-[0.99]"
+                >
+                  End
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-4">
               <div className="space-y-1">
-                <div className="text-sm font-semibold text-white">No active feed</div>
+                <div className="text-sm font-semibold text-white">
+                  No active feed
+                </div>
                 <div className="text-sm text-zinc-400">
                   Tap start when feeding begins.
                 </div>
@@ -210,11 +288,7 @@ export default function DashboardClient() {
         </section>
 
         <section className="grid gap-3">
-          <BigButton
-            label="💧 Pee"
-            subLabel="1 tap"
-            onClick={onPee}
-          />
+          <BigButton label="💧 Pee" subLabel="1 tap" onClick={onPee} />
 
           <BigButton
             label="💩 Motion"
@@ -233,22 +307,32 @@ export default function DashboardClient() {
           <div className="text-sm font-semibold text-white">Today</div>
           <div className="mt-2 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-2xl bg-black px-3 py-3">
-              <div className="text-2xl font-semibold">{todaySummary?.feed ?? "—"}</div>
+              <div className="text-2xl font-semibold">
+                {todaySummary?.feed ?? "—"}
+              </div>
               <div className="text-xs font-medium text-zinc-400">feeds</div>
             </div>
             <div className="rounded-2xl bg-black px-3 py-3">
-              <div className="text-2xl font-semibold">{todaySummary?.pee ?? "—"}</div>
+              <div className="text-2xl font-semibold">
+                {todaySummary?.pee ?? "—"}
+              </div>
               <div className="text-xs font-medium text-zinc-400">pee</div>
             </div>
             <div className="rounded-2xl bg-black px-3 py-3">
-              <div className="text-2xl font-semibold">{todaySummary?.motion ?? "—"}</div>
+              <div className="text-2xl font-semibold">
+                {todaySummary?.motion ?? "—"}
+              </div>
               <div className="text-xs font-medium text-zinc-400">motion</div>
             </div>
           </div>
         </section>
       </main>
 
-      <BottomSheet open={motionOpen} title="Motion" onClose={() => setMotionOpen(false)}>
+      <BottomSheet
+        open={motionOpen}
+        title="Motion"
+        onClose={() => setMotionOpen(false)}
+      >
         <button
           onClick={() => void onMotion("normal")}
           className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
@@ -269,7 +353,11 @@ export default function DashboardClient() {
         </button>
       </BottomSheet>
 
-      <BottomSheet open={feedOpen} title="Start feed" onClose={() => setFeedOpen(false)}>
+      <BottomSheet
+        open={feedOpen}
+        title="Start feed"
+        onClose={() => setFeedOpen(false)}
+      >
         <button
           disabled={Boolean(activeFeed)}
           onClick={() => void onStartFeed("left")}
@@ -300,4 +388,3 @@ export default function DashboardClient() {
     </div>
   );
 }
-

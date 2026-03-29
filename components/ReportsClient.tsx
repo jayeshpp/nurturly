@@ -201,7 +201,16 @@ function TabButton({
 function Row({ e }: { e: LocalEvent }) {
   const duration =
     e.end_time && e.type === "feed"
-      ? Date.parse(e.end_time) - Date.parse(e.start_time)
+      ? (() => {
+          const meta =
+            e.metadata && typeof e.metadata === "object" ? (e.metadata as any) : {};
+          const pausedTotal =
+            typeof meta.paused_total_ms === "number" ? meta.paused_total_ms : 0;
+          return Math.max(
+            0,
+            Date.parse(e.end_time) - Date.parse(e.start_time) - pausedTotal
+          );
+        })()
       : null;
 
   const label =
