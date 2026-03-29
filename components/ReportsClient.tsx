@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { dayRangeUtcIso, formatDurationMs, formatTimeLocal } from "@/lib/date";
 import type { LocalEvent } from "@/lib/types";
 
+type Tab = "all" | "feed" | "pee" | "motion";
+
 function avg(nums: number[]) {
   if (nums.length === 0) return null;
   return nums.reduce((a, b) => a + b, 0) / nums.length;
@@ -20,6 +22,7 @@ function toDateInputValue(d: Date) {
 
 export default function ReportsClient() {
   const [dateValue, setDateValue] = useState(() => toDateInputValue(new Date()));
+  const [tab, setTab] = useState<Tab>("all");
 
   const ctx = useLiveQuery(async () => {
     const baby_id = (await db.settings.get("baby_id"))?.value ?? null;
@@ -67,6 +70,12 @@ export default function ReportsClient() {
       motionCount: motions.length,
     };
   }, [rows]);
+
+  const filteredRows = useMemo(() => {
+    if (!rows) return rows;
+    if (tab === "all") return rows;
+    return rows.filter((e) => e.type === tab);
+  }, [rows, tab]);
 
   if (!ctx?.baby_id) {
     return (
@@ -133,21 +142,59 @@ export default function ReportsClient() {
         </section>
 
         <section className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950">
-          <div className="border-b border-zinc-800 px-4 py-3 text-sm font-semibold">
-            Events
+          <div className="border-b border-zinc-800 px-4 py-3">
+            <div className="text-sm font-semibold">Events</div>
+            <div className="mt-3 flex gap-2">
+              <TabButton active={tab === "all"} onClick={() => setTab("all")}>
+                All
+              </TabButton>
+              <TabButton active={tab === "feed"} onClick={() => setTab("feed")}>
+                Feed
+              </TabButton>
+              <TabButton active={tab === "pee"} onClick={() => setTab("pee")}>
+                Pee
+              </TabButton>
+              <TabButton active={tab === "motion"} onClick={() => setTab("motion")}>
+                Motion
+              </TabButton>
+            </div>
           </div>
 
           <div className="divide-y divide-zinc-900">
-            {(rows ?? []).map((e) => (
+            {(filteredRows ?? []).map((e) => (
               <Row key={e.id} e={e} />
             ))}
-            {rows && rows.length === 0 ? (
-              <div className="px-4 py-6 text-sm text-zinc-400">No events for this date.</div>
+            {filteredRows && filteredRows.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-zinc-400">
+                No {tab === "all" ? "" : `${tab} `}events for this date.
+              </div>
             ) : null}
           </div>
         </section>
       </main>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={[
+        "h-10 flex-1 rounded-2xl px-3 text-sm font-semibold",
+        active ? "bg-white text-black" : "border border-zinc-700 text-zinc-200",
+      ].join(" ")}
+    >
+      {children}
+    </button>
   );
 }
 
