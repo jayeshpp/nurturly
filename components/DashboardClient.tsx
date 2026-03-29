@@ -6,13 +6,16 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { BigButton } from "@/components/BigButton";
 import { BottomSheet } from "@/components/BottomSheet";
 import { db } from "@/lib/db";
+import { getFeedMeta } from "@/lib/event-metadata";
 import { hapticLight } from "@/lib/haptics";
 import {
+  appendFeedNote,
   endFeed,
   logMotion,
   logPee,
   pauseFeed,
   resumeFeed,
+  setFeedNote,
   startFeed,
   syncPendingEvents,
 } from "@/lib/offline/events";
@@ -32,6 +35,8 @@ function timeAgoShort(ms: number) {
 export default function DashboardClient() {
   const [motionOpen, setMotionOpen] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const ctx = useLiveQuery(async () => {
@@ -103,14 +108,9 @@ export default function DashboardClient() {
 
   const feedRunningMs = useMemo(() => {
     if (!activeFeed) return null;
-    const meta = (
-      activeFeed.metadata && typeof activeFeed.metadata === "object"
-        ? (activeFeed.metadata as any)
-        : {}
-    ) as any;
-    const pausedAt = typeof meta.paused_at === "string" ? meta.paused_at : null;
-    const pausedTotal =
-      typeof meta.paused_total_ms === "number" ? meta.paused_total_ms : 0;
+    const { paused_at: pausedAt, paused_total_ms: pausedTotal } = getFeedMeta(
+      activeFeed.metadata
+    );
     const endOfSegment = pausedAt ? Date.parse(pausedAt) : nowMs;
     return Math.max(
       0,
@@ -120,12 +120,13 @@ export default function DashboardClient() {
 
   const feedIsPaused = useMemo(() => {
     if (!activeFeed) return false;
-    const meta = (
-      activeFeed.metadata && typeof activeFeed.metadata === "object"
-        ? (activeFeed.metadata as any)
-        : {}
-    ) as any;
-    return typeof meta.paused_at === "string" && meta.paused_at.length > 0;
+    const { paused_at } = getFeedMeta(activeFeed.metadata);
+    return Boolean(paused_at);
+  }, [activeFeed]);
+
+  const activeFeedNote = useMemo(() => {
+    if (!activeFeed) return "";
+    return getFeedMeta(activeFeed.metadata).note ?? "";
   }, [activeFeed]);
 
   useEffect(() => {
@@ -197,6 +198,26 @@ export default function DashboardClient() {
     await resumeFeed(activeFeed.id);
   }
 
+  function openNote() {
+    if (!activeFeed) return;
+    setNoteDraft(activeFeedNote);
+    setNoteOpen(true);
+  }
+
+  async function onSaveNote() {
+    if (!activeFeed) return;
+    hapticLight();
+    await setFeedNote(activeFeed.id, noteDraft);
+    setNoteOpen(false);
+  }
+
+  async function onQuickNote(snippet: string) {
+    if (!activeFeed) return;
+    hapticLight();
+    await appendFeedNote(activeFeed.id, snippet);
+    setNoteOpen(false);
+  }
+
   async function onMotion(kind: MotionKind) {
     hapticLight();
     await logMotion(kind);
@@ -242,8 +263,24 @@ export default function DashboardClient() {
                     Paused
                   </div>
                 ) : null}
+                {activeFeedNote ? (
+                  <div className="text-xs font-medium text-zinc-400">
+                    Note:{" "}
+                    <span className="text-zinc-200">
+                      {activeFeedNote.length > 44
+                        ? `${activeFeedNote.slice(0, 44)}…`
+                        : activeFeedNote}
+                    </span>
+                  </div>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={openNote}
+                  className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm font-semibold text-white active:scale-[0.99]"
+                >
+                  Note
+                </button>
                 {feedIsPaused ? (
                   <button
                     onClick={onResumeFeed}
@@ -384,6 +421,68 @@ export default function DashboardClient() {
             You already have an active feed. End it first.
           </div>
         ) : null}
+      </BottomSheet>
+
+      <BottomSheet
+        open={noteOpen}
+        title="Feed note"
+        onClose={() => setNoteOpen(false)}
+      >
+        <div className="grid gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => void onQuickNote("Crying")}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Crying
+            </button>
+            <button
+              onClick={() => void onQuickNote("Fussy")}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Fussy
+            </button>
+            <button
+              onClick={() => void onQuickNote("Spit up")}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Spit up
+            </button>
+            <button
+              onClick={() => void onQuickNote("Good latch")}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Good latch
+            </button>
+          </div>
+
+          <textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="Optional note…"
+            rows={3}
+            className="w-full resize-none rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-base text-white outline-none"
+          />
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                setNoteDraft("");
+                if (activeFeed) void setFeedNote(activeFeed.id, null);
+                setNoteOpen(false);
+              }}
+              className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left text-base font-semibold text-white"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => void onSaveNote()}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Save
+            </button>
+          </div>
+        </div>
       </BottomSheet>
     </div>
   );

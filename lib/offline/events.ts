@@ -1,25 +1,9 @@
 import { db } from "@/lib/db";
 import { hasSupabaseEnv } from "@/lib/env";
+import { getFeedMeta, setFeedMeta } from "@/lib/event-metadata";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { nowIsoUtc } from "@/lib/time";
 import type { EventMetadata, EventType, LocalEvent, MotionKind, FeedSide } from "@/lib/types";
-
-function getFeedPauseMeta(metadata: EventMetadata | null | undefined) {
-  const m = (metadata && typeof metadata === "object" ? metadata : {}) as any;
-  const paused_at = typeof m.paused_at === "string" ? m.paused_at : null;
-  const paused_total_ms = typeof m.paused_total_ms === "number" ? m.paused_total_ms : 0;
-  const side = typeof m.side === "string" ? m.side : undefined;
-  return { side, paused_at, paused_total_ms };
-}
-
-function setFeedPauseMeta(metadata: EventMetadata | null | undefined, next: { paused_at: string | null; paused_total_ms: number }) {
-  const base = (metadata && typeof metadata === "object" ? metadata : {}) as Record<string, unknown>;
-  return {
-    ...base,
-    paused_at: next.paused_at,
-    paused_total_ms: next.paused_total_ms,
-  } satisfies EventMetadata;
-}
 
 async function getRequiredSetting(key: string) {
   const row = await db.settings.get(key);
@@ -167,11 +151,11 @@ export async function pauseFeed(activeFeedId: string) {
   const feed = await db.events.get(activeFeedId);
   if (!feed || feed.type !== "feed" || feed.end_time !== null || feed.deleted_at !== null) return;
 
-  const { paused_at, paused_total_ms } = getFeedPauseMeta(feed.metadata);
+  const { paused_at, paused_total_ms } = getFeedMeta(feed.metadata);
   if (paused_at) return; // already paused
 
   await db.events.update(activeFeedId, {
-    metadata: setFeedPauseMeta(feed.metadata, { paused_at: nowIsoUtc(), paused_total_ms }),
+    metadata: setFeedMeta(feed.metadata, { paused_at: nowIsoUtc(), paused_total_ms }),
     updated_at: nowIsoUtc(),
     sync_status: "pending",
     last_error: null,
@@ -183,15 +167,12 @@ export async function resumeFeed(activeFeedId: string) {
   const feed = await db.events.get(activeFeedId);
   if (!feed || feed.type !== "feed" || feed.end_time !== null || feed.deleted_at !== null) return;
 
-  const { paused_at, paused_total_ms } = getFeedPauseMeta(feed.metadata);
+  const { paused_at, paused_total_ms } = getFeedMeta(feed.metadata);
   if (!paused_at) return; // not paused
 
   const delta = Math.max(0, Date.now() - Date.parse(paused_at));
   await db.events.update(activeFeedId, {
-    metadata: setFeedPauseMeta(feed.metadata, {
-      paused_at: null,
-      paused_total_ms: paused_total_ms + delta,
-    }),
+    metadata: setFeedMeta(feed.metadata, { paused_at: null, paused_total_ms: paused_total_ms + delta }),
     updated_at: nowIsoUtc(),
     sync_status: "pending",
     last_error: null,
@@ -205,22 +186,42 @@ export async function endFeed(activeFeedId: string) {
   if (!feed) return;
 
   // If user ends while paused, accumulate the paused segment up to end_time.
-  const { paused_at, paused_total_ms } = getFeedPauseMeta(feed.metadata);
+  const { paused_at, paused_total_ms } = getFeedMeta(feed.metadata);
   const extraPaused =
     paused_at ? Math.max(0, Date.parse(end_time) - Date.parse(paused_at)) : 0;
 
   await db.events.update(activeFeedId, {
     end_time,
     metadata: feed.type === "feed"
-      ? setFeedPauseMeta(feed.metadata, {
-          paused_at: null,
-          paused_total_ms: paused_total_ms + extraPaused,
-        })
+      ? setFeedMeta(feed.metadata, { paused_at: null, paused_total_ms: paused_total_ms + extraPaused })
       : feed.metadata,
     updated_at: nowIsoUtc(),
     sync_status: "pending",
     last_error: null,
   });
   void trySyncEvent(activeFeedId);
+}
+
+export async function setFeedNote(feedId: string, note: string | null) {
+  const feed = await db.events.get(feedId);
+  if (!feed || feed.type !== "feed" || feed.deleted_at !== null) return;
+
+  const trimmed = note?.trim() ?? "";
+  await db.events.update(feedId, {
+    metadata: setFeedMeta(feed.metadata, { note: trimmed.length > 0 ? trimmed : undefined }),
+    updated_at: nowIsoUtc(),
+    sync_status: "pending",
+    last_error: null,
+  });
+  void trySyncEvent(feedId);
+}
+
+export async function appendFeedNote(feedId: string, snippet: string) {
+  const feed = await db.events.get(feedId);
+  if (!feed || feed.type !== "feed" || feed.deleted_at !== null) return;
+
+  const cur = getFeedMeta(feed.metadata).note ?? "";
+  const next = cur.trim().length > 0 ? `${cur.trim()}; ${snippet}` : snippet;
+  await setFeedNote(feedId, next);
 }
 

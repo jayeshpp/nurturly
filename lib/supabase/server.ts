@@ -2,6 +2,10 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { requireSupabaseEnv } from "@/lib/env";
 
+type CookieStoreWithSet = {
+  set: (name: string, value: string, options?: Record<string, unknown>) => void;
+};
+
 export async function createSupabaseServerClient() {
   const { url, key } = requireSupabaseEnv();
   const cookieStore = await cookies();
@@ -16,7 +20,11 @@ export async function createSupabaseServerClient() {
         // In Route Handlers, this will succeed and persist auth changes.
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
-            (cookieStore as any).set(name, value, options);
+            (cookieStore as unknown as CookieStoreWithSet).set(
+              name,
+              value,
+              options as unknown as Record<string, unknown>
+            );
           });
         } catch {
           // no-op

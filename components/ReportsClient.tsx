@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import { dayRangeUtcIso, formatDurationMs, formatTimeLocal } from "@/lib/date";
+import { getFeedMeta, getMotionMeta } from "@/lib/event-metadata";
 import type { LocalEvent } from "@/lib/types";
 
 type Tab = "all" | "feed" | "pee" | "motion";
@@ -202,10 +203,7 @@ function Row({ e }: { e: LocalEvent }) {
   const duration =
     e.end_time && e.type === "feed"
       ? (() => {
-          const meta =
-            e.metadata && typeof e.metadata === "object" ? (e.metadata as any) : {};
-          const pausedTotal =
-            typeof meta.paused_total_ms === "number" ? meta.paused_total_ms : 0;
+          const { paused_total_ms: pausedTotal } = getFeedMeta(e.metadata);
           return Math.max(
             0,
             Date.parse(e.end_time) - Date.parse(e.start_time) - pausedTotal
@@ -213,17 +211,25 @@ function Row({ e }: { e: LocalEvent }) {
         })()
       : null;
 
+  const feedMeta = e.type === "feed" ? getFeedMeta(e.metadata) : null;
+  const motionMeta = e.type === "motion" ? getMotionMeta(e.metadata) : null;
+
   const label =
     e.type === "pee"
       ? "Pee"
       : e.type === "motion"
-        ? `Motion${typeof e.metadata === "object" && e.metadata && "kind" in e.metadata ? ` (${String((e.metadata as any).kind)})` : ""}`
-        : `Feed${typeof e.metadata === "object" && e.metadata && "side" in e.metadata ? ` (${String((e.metadata as any).side)})` : ""}`;
+        ? `Motion${motionMeta?.kind ? ` (${motionMeta.kind})` : ""}`
+        : `Feed${feedMeta?.side ? ` (${feedMeta.side})` : ""}`;
 
   return (
     <div className="grid grid-cols-[92px_1fr_90px] items-center gap-3 px-4 py-3">
       <div className="text-sm font-semibold">{formatTimeLocal(e.start_time)}</div>
-      <div className="text-sm text-zinc-200">{label}</div>
+      <div className="min-w-0">
+        <div className="truncate text-sm text-zinc-200">{label}</div>
+        {e.type === "feed" && feedMeta?.note ? (
+          <div className="truncate text-xs text-zinc-500">{feedMeta.note}</div>
+        ) : null}
+      </div>
       <div className="text-right text-sm font-semibold text-zinc-300">
         {duration != null ? formatDurationMs(duration) : ""}
       </div>
