@@ -3,9 +3,12 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { BottomSheet } from "@/components/BottomSheet";
 import { db } from "@/lib/db";
 import { dayRangeUtcIso, formatDurationMs, formatTimeLocal } from "@/lib/date";
 import { getFeedMeta, getMotionMeta } from "@/lib/event-metadata";
+import { hapticLight } from "@/lib/haptics";
+import { appendFeedNote, setFeedNote } from "@/lib/offline/events";
 import type { LocalEvent } from "@/lib/types";
 
 type Tab = "all" | "feed" | "pee" | "motion";
@@ -24,6 +27,9 @@ function toDateInputValue(d: Date) {
 export default function ReportsClient() {
   const [dateValue, setDateValue] = useState(() => toDateInputValue(new Date()));
   const [tab, setTab] = useState<Tab>("all");
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteFeedId, setNoteFeedId] = useState<string | null>(null);
 
   const ctx = useLiveQuery(async () => {
     const baby_id = (await db.settings.get("baby_id"))?.value ?? null;
@@ -77,6 +83,35 @@ export default function ReportsClient() {
     if (tab === "all") return rows;
     return rows.filter((e) => e.type === tab);
   }, [rows, tab]);
+
+  const selectedFeed = useMemo(() => {
+    if (!rows || !noteFeedId) return null;
+    const e = rows.find((r) => r.id === noteFeedId);
+    if (!e || e.type !== "feed") return null;
+    return e;
+  }, [rows, noteFeedId]);
+
+  function openFeedNoteEditor(feed: LocalEvent) {
+    if (feed.type !== "feed") return;
+    const note = getFeedMeta(feed.metadata).note ?? "";
+    setNoteFeedId(feed.id);
+    setNoteDraft(note);
+    setNoteOpen(true);
+  }
+
+  async function onSaveNote() {
+    if (!selectedFeed) return;
+    hapticLight();
+    await setFeedNote(selectedFeed.id, noteDraft);
+    setNoteOpen(false);
+  }
+
+  async function onQuickNote(snippet: string) {
+    if (!selectedFeed) return;
+    hapticLight();
+    await appendFeedNote(selectedFeed.id, snippet);
+    setNoteOpen(false);
+  }
 
   if (!ctx?.baby_id) {
     return (
@@ -163,7 +198,7 @@ export default function ReportsClient() {
 
           <div className="divide-y divide-zinc-900">
             {(filteredRows ?? []).map((e) => (
-              <Row key={e.id} e={e} />
+              <Row key={e.id} e={e} onEditFeedNote={openFeedNoteEditor} />
             ))}
             {filteredRows && filteredRows.length === 0 ? (
               <div className="px-4 py-6 text-sm text-zinc-400">
@@ -173,6 +208,69 @@ export default function ReportsClient() {
           </div>
         </section>
       </main>
+
+      <BottomSheet
+        open={noteOpen}
+        title="Feed note"
+        onClose={() => setNoteOpen(false)}
+      >
+        <div className="grid gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => void onQuickNote("Crying")}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Crying
+            </button>
+            <button
+              onClick={() => void onQuickNote("Fussy")}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Fussy
+            </button>
+            <button
+              onClick={() => void onQuickNote("Spit up")}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Spit up
+            </button>
+            <button
+              onClick={() => void onQuickNote("Good latch")}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Good latch
+            </button>
+          </div>
+
+          <textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="Optional note…"
+            rows={3}
+            className="w-full resize-none rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-base text-white outline-none"
+          />
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                hapticLight();
+                setNoteDraft("");
+                if (selectedFeed) void setFeedNote(selectedFeed.id, null);
+                setNoteOpen(false);
+              }}
+              className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left text-base font-semibold text-white"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => void onSaveNote()}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
     </div>
   );
 }
@@ -199,7 +297,13 @@ function TabButton({
   );
 }
 
-function Row({ e }: { e: LocalEvent }) {
+function Row({
+  e,
+  onEditFeedNote,
+}: {
+  e: LocalEvent;
+  onEditFeedNote: (feed: LocalEvent) => void;
+}) {
   const duration =
     e.end_time && e.type === "feed"
       ? (() => {
@@ -222,7 +326,17 @@ function Row({ e }: { e: LocalEvent }) {
         : `Feed${feedMeta?.side ? ` (${feedMeta.side})` : ""}`;
 
   return (
-    <div className="grid grid-cols-[92px_1fr_90px] items-center gap-3 px-4 py-3">
+    <button
+      type="button"
+      onClick={() => {
+        if (e.type === "feed") onEditFeedNote(e);
+      }}
+      className={[
+        "grid w-full grid-cols-[92px_1fr_90px] items-center gap-3 px-4 py-3 text-left",
+        e.type === "feed" ? "active:bg-black/40" : "",
+      ].join(" ")}
+      aria-label={e.type === "feed" ? "Edit feed note" : undefined}
+    >
       <div className="text-sm font-semibold">{formatTimeLocal(e.start_time)}</div>
       <div className="min-w-0">
         <div className="truncate text-sm text-zinc-200">{label}</div>
@@ -233,7 +347,7 @@ function Row({ e }: { e: LocalEvent }) {
       <div className="text-right text-sm font-semibold text-zinc-300">
         {duration != null ? formatDurationMs(duration) : ""}
       </div>
-    </div>
+    </button>
   );
 }
 
