@@ -24,3 +24,38 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Tap ripple (CSS-only, centered) */
+.ripple {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.ripple::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 220%;
+  aspect-ratio: 1 / 1;
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  background: radial-gradient(
+    circle,
+    var(--ripple-color, rgba(255, 255, 255, 0.28)) 0%,
+    transparent 60%
+  );
+  transition: transform 420ms ease, opacity 900ms ease;
+  pointer-events: none;
+}
+
+.ripple:active::after {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  transition: transform 420ms ease, opacity 900ms ease;
+}
+
+.ripple-light {
+  --ripple-color: rgba(0, 0, 0, 0.14);
+}

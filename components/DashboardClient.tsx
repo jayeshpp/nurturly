@@ -37,6 +37,9 @@ export default function DashboardClient() {
   const [feedOpen, setFeedOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  const [peeCooldownUntilMs, setPeeCooldownUntilMs] = useState<number | null>(
+    null
+  );
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const ctx = useLiveQuery(async () => {
@@ -166,6 +169,8 @@ export default function DashboardClient() {
   }
 
   async function onPee() {
+    if (peeCooldownUntilMs && Date.now() < peeCooldownUntilMs) return;
+    setPeeCooldownUntilMs(Date.now() + 10_000);
     hapticLight();
     await logPee();
   }
@@ -227,6 +232,8 @@ export default function DashboardClient() {
   const lastFeedText = lastFeed
     ? timeAgoShort(nowMs - Date.parse(lastFeed.end_time!))
     : "—";
+
+  const peeDisabled = peeCooldownUntilMs !== null && nowMs < peeCooldownUntilMs;
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -325,7 +332,12 @@ export default function DashboardClient() {
         </section>
 
         <section className="grid gap-3">
-          <BigButton label="💧 Pee" subLabel="1 tap" onClick={onPee} />
+          <BigButton
+            label="💧 Pee"
+            subLabel={peeDisabled ? "Saved • wait 10s" : "1 tap"}
+            onClick={onPee}
+            disabled={peeDisabled}
+          />
 
           <BigButton
             label="💩 Motion"
