@@ -12,6 +12,10 @@ function randomName() {
 }
 
 export default function SetupPage() {
+  // Deprecated: replaced by /onboarding
+  if (typeof window !== "undefined") {
+    window.location.href = "/onboarding";
+  }
   const existingBabyId = useLiveQuery(async () => {
     const row = await db.settings.get("baby_id");
     return row?.value ?? null;

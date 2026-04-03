@@ -118,12 +118,12 @@ export default function ReportsClient() {
       <div className="min-h-screen bg-black text-white">
         <main className="mx-auto w-full max-w-xl space-y-4 px-6 py-12">
           <h1 className="text-3xl font-semibold tracking-tight">Reports</h1>
-          <p className="text-sm text-zinc-400">Set up a baby first.</p>
+          <p className="text-sm text-zinc-400">Complete onboarding first.</p>
           <Link
-            href="/setup"
+            href="/onboarding"
             className="inline-flex w-full items-center justify-center rounded-3xl bg-white px-5 py-5 text-lg font-semibold text-black"
           >
-            Go to setup
+            Go to onboarding
           </Link>
         </main>
       </div>

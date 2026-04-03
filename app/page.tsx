@@ -25,10 +25,10 @@ export default function Home() {
             Open Dashboard
           </Link>
           <Link
-            href="/setup"
+            href="/onboarding"
             className="rounded-2xl border border-zinc-700 px-5 py-4 text-center text-base font-semibold text-white active:scale-[0.99]"
           >
-            First-time setup
+            Get started
           </Link>
         </div>
 

@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useLiveQuery } from "dexie-react-hooks";
 import { BottomSheet } from "@/components/BottomSheet";
+import { db } from "@/lib/db";
+import { nowIsoUtc } from "@/lib/time";
 
 function HomeIcon({ active }: { active: boolean }) {
   return (
@@ -107,8 +110,157 @@ function NavLink({
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [migrationChecked, setMigrationChecked] = useState(false);
 
-  const showNav = useMemo(() => pathname !== "/", [pathname]);
+  const onboardingComplete = useLiveQuery(async () => {
+    const v = (await db.settings.get("onboarding_complete"))?.value;
+    return v === "true";
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function migrateIfNeeded() {
+      const complete = (await db.settings.get("onboarding_complete"))?.value === "true";
+      if (complete) return;
+
+      const eventsCount = await db.events.count();
+      const babyId = (await db.settings.get("baby_id"))?.value ?? null;
+      const tenantId = (await db.settings.get("tenant_id"))?.value ?? null;
+      const userId = (await db.settings.get("user_id"))?.value ?? null;
+
+      const hasLegacyData = eventsCount > 0 || Boolean(babyId && tenantId && userId);
+      if (!hasLegacyData) return;
+
+      // Preserve existing local data by completing onboarding in-place.
+      const mode = (await db.settings.get("mode"))?.value ?? null;
+      if (!mode) {
+        await db.settings.put({ key: "mode", value: "offline", updated_at: nowIsoUtc() });
+      }
+
+      const role = (await db.settings.get("role"))?.value ?? null;
+      if (!role) {
+        await db.settings.put({ key: "role", value: "owner", updated_at: nowIsoUtc() });
+      }
+
+      const tenantName = (await db.settings.get("tenant_name"))?.value ?? null;
+      if (!tenantName) {
+        await db.settings.put({
+          key: "tenant_name",
+          value: "Local family",
+          updated_at: nowIsoUtc(),
+        });
+      }
+
+      // Ensure tenant_id/user_id/baby_id exist using the most recent event if needed.
+      if (!tenantId || !userId || !babyId) {
+        const events = await db.events.orderBy("start_time").reverse().limit(1).toArray();
+        const last = events[0] ?? null;
+        if (last) {
+          if (!tenantId) {
+            await db.settings.put({
+              key: "tenant_id",
+              value: last.tenant_id,
+              updated_at: nowIsoUtc(),
+            });
+          }
+          if (!userId) {
+            await db.settings.put({
+              key: "user_id",
+              value: last.user_id,
+              updated_at: nowIsoUtc(),
+            });
+          }
+          if (!babyId) {
+            await db.settings.put({
+              key: "baby_id",
+              value: last.baby_id,
+              updated_at: nowIsoUtc(),
+            });
+          }
+        }
+      }
+
+      // Ensure a babies list exists (best-effort).
+      const babiesRaw = (await db.settings.get("babies"))?.value ?? null;
+      if (!babiesRaw) {
+        const profileRaw = (await db.settings.get("baby_profile"))?.value ?? null;
+        let babies: Array<{ id: string; name: string; birth_date: string }> = [];
+
+        if (profileRaw) {
+          try {
+            const parsed = JSON.parse(profileRaw) as Record<string, unknown>;
+            const id = typeof parsed.id === "string" ? parsed.id : null;
+            const name = typeof parsed.name === "string" ? parsed.name : null;
+            const birth_date =
+              typeof parsed.birth_date === "string" ? parsed.birth_date : null;
+            if (id && name && birth_date) {
+              babies = [{ id, name, birth_date }];
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        if (babies.length === 0 && eventsCount > 0) {
+          const events = await db.events.toArray();
+          const ids = Array.from(
+            new Set(events.map((e) => e.baby_id).filter((v) => typeof v === "string"))
+          );
+          const today = (() => {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+              d.getDate()
+            ).padStart(2, "0")}`;
+          })();
+          babies = ids.map((id, idx) => ({ id, name: `Baby ${idx + 1}`, birth_date: today }));
+        }
+
+        if (babies.length > 0) {
+          await db.settings.put({
+            key: "babies",
+            value: JSON.stringify(babies),
+            updated_at: nowIsoUtc(),
+          });
+        }
+      }
+
+      await db.settings.put({
+        key: "onboarding_complete",
+        value: "true",
+        updated_at: nowIsoUtc(),
+      });
+    }
+
+    void migrateIfNeeded()
+      .catch(() => {
+        // ignore: never block app load
+      })
+      .finally(() => {
+        if (!cancelled) setMigrationChecked(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!migrationChecked) return;
+    if (onboardingComplete === undefined) return;
+    if (onboardingComplete) return;
+    if (pathname.startsWith("/onboarding")) return;
+    if (pathname.startsWith("/auth/callback")) return;
+    window.location.replace("/onboarding");
+  }, [migrationChecked, onboardingComplete, pathname]);
+
+  const showNav = useMemo(
+    () =>
+      Boolean(onboardingComplete) &&
+      pathname !== "/" &&
+      !pathname.startsWith("/onboarding"),
+    [pathname, onboardingComplete]
+  );
   const active = useMemo(() => {
     if (pathname?.startsWith("/reports")) return "reports";
     return "home";
@@ -155,20 +307,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         onClose={() => setMenuOpen(false)}
       >
         <Link
-          href="/setup"
+          href="/settings"
           onClick={() => setMenuOpen(false)}
           className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
         >
-          Baby setup
+          Settings
         </Link>
-        <a
-          href="/api/health"
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left text-base font-semibold text-white"
-        >
-          Connection health
-        </a>
         <div className="pt-1 text-xs text-zinc-400">
           More settings will live here (tenant, invites, baby selector, etc.).
         </div>
