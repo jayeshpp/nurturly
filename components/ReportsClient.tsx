@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { dayRangeUtcIso, formatDurationMs, formatTimeLocal } from "@/lib/date";
 import { getFeedMeta, getMotionMeta } from "@/lib/event-metadata";
 import { hapticLight } from "@/lib/haptics";
-import { appendFeedNote, setFeedNote } from "@/lib/offline/events";
+import { setFeedNoteDraft } from "@/lib/offline/events";
 import type { LocalEvent } from "@/lib/types";
 
 type Tab = "all" | "feed" | "pee" | "motion";
@@ -29,6 +29,7 @@ export default function ReportsClient() {
   const [tab, setTab] = useState<Tab>("all");
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  const [noteTagsDraft, setNoteTagsDraft] = useState<string[]>([]);
   const [noteFeedId, setNoteFeedId] = useState<string | null>(null);
 
   const ctx = useLiveQuery(async () => {
@@ -93,24 +94,26 @@ export default function ReportsClient() {
 
   function openFeedNoteEditor(feed: LocalEvent) {
     if (feed.type !== "feed") return;
-    const note = getFeedMeta(feed.metadata).note ?? "";
+    const meta = getFeedMeta(feed.metadata);
+    const note = meta.note ?? "";
+    const tags = meta.note_tags ?? [];
     setNoteFeedId(feed.id);
     setNoteDraft(note);
+    setNoteTagsDraft(tags);
     setNoteOpen(true);
   }
 
   async function onSaveNote() {
     if (!selectedFeed) return;
     hapticLight();
-    await setFeedNote(selectedFeed.id, noteDraft);
+    await setFeedNoteDraft(selectedFeed.id, { note: noteDraft, tags: noteTagsDraft });
     setNoteOpen(false);
   }
 
-  async function onQuickNote(snippet: string) {
-    if (!selectedFeed) return;
-    hapticLight();
-    await appendFeedNote(selectedFeed.id, snippet);
-    setNoteOpen(false);
+  function toggleTag(tag: string) {
+    setNoteTagsDraft((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
   }
 
   if (!ctx?.baby_id) {
@@ -217,26 +220,46 @@ export default function ReportsClient() {
         <div className="grid gap-2">
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => void onQuickNote("Crying")}
-              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+              onClick={() => toggleTag("Crying")}
+              className={[
+                "ripple rounded-2xl px-4 py-4 text-left text-base font-semibold",
+                noteTagsDraft.includes("Crying")
+                  ? "bg-white text-black"
+                  : "border border-zinc-700 bg-zinc-950 text-white",
+              ].join(" ")}
             >
               Crying
             </button>
             <button
-              onClick={() => void onQuickNote("Fussy")}
-              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+              onClick={() => toggleTag("Fussy")}
+              className={[
+                "ripple rounded-2xl px-4 py-4 text-left text-base font-semibold",
+                noteTagsDraft.includes("Fussy")
+                  ? "bg-white text-black"
+                  : "border border-zinc-700 bg-zinc-950 text-white",
+              ].join(" ")}
             >
               Fussy
             </button>
             <button
-              onClick={() => void onQuickNote("Spit up")}
-              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+              onClick={() => toggleTag("Spit up")}
+              className={[
+                "ripple rounded-2xl px-4 py-4 text-left text-base font-semibold",
+                noteTagsDraft.includes("Spit up")
+                  ? "bg-white text-black"
+                  : "border border-zinc-700 bg-zinc-950 text-white",
+              ].join(" ")}
             >
               Spit up
             </button>
             <button
-              onClick={() => void onQuickNote("Good latch")}
-              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+              onClick={() => toggleTag("Good latch")}
+              className={[
+                "ripple rounded-2xl px-4 py-4 text-left text-base font-semibold",
+                noteTagsDraft.includes("Good latch")
+                  ? "bg-white text-black"
+                  : "border border-zinc-700 bg-zinc-950 text-white",
+              ].join(" ")}
             >
               Good latch
             </button>
@@ -255,7 +278,8 @@ export default function ReportsClient() {
               onClick={() => {
                 hapticLight();
                 setNoteDraft("");
-                if (selectedFeed) void setFeedNote(selectedFeed.id, null);
+                setNoteTagsDraft([]);
+                if (selectedFeed) void setFeedNoteDraft(selectedFeed.id, { note: "", tags: [] });
                 setNoteOpen(false);
               }}
               className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left text-base font-semibold text-white"
@@ -340,8 +364,18 @@ function Row({
       <div className="text-sm font-semibold">{formatTimeLocal(e.start_time)}</div>
       <div className="min-w-0">
         <div className="truncate text-sm text-zinc-200">{label}</div>
-        {e.type === "feed" && feedMeta?.note ? (
-          <div className="truncate text-xs text-zinc-500">{feedMeta.note}</div>
+        {e.type === "feed" ? (
+          (() => {
+            const tags = feedMeta?.note_tags ?? [];
+            const note = feedMeta?.note ?? "";
+            const parts = [...tags, ...(note ? [note] : [])];
+            if (parts.length === 0) return null;
+            return (
+              <div className="text-xs text-zinc-500 break-words whitespace-normal">
+                {parts.join(" • ")}
+              </div>
+            );
+          })()
         ) : null}
       </div>
       <div className="text-right text-sm font-semibold text-zinc-300">

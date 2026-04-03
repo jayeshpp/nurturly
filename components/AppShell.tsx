@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BottomSheet } from "@/components/BottomSheet";
 
 function HomeIcon({ active }: { active: boolean }) {
   return (
@@ -57,26 +56,6 @@ function ReportsIcon({ active }: { active: boolean }) {
   );
 }
 
-function MenuIcon({ active }: { active: boolean }) {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      className={active ? "text-black" : "text-zinc-200"}
-    >
-      <path
-        d="M5 7h14M5 12h14M5 17h14"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 function NavLink({
   href,
   label,
@@ -106,7 +85,6 @@ function NavLink({
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const showNav = useMemo(() => pathname !== "/", [pathname]);
   const active = useMemo(() => {
@@ -135,44 +113,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               active={active === "reports"}
               icon={<ReportsIcon active={active === "reports"} />}
             />
-            <button
-              onClick={() => setMenuOpen(true)}
-              className="ripple flex h-14 w-14 flex-col items-center justify-center gap-1 rounded-2xl border border-white/10 text-[11px] font-semibold text-zinc-200 transition-colors hover:bg-white/10 active:scale-[0.99] active:bg-white/15"
-              aria-label="Menu"
-            >
-              <MenuIcon active={false} />
-              Menu
-            </button>
               </div>
             </div>
           </div>
         </div>
       ) : null}
-
-      <BottomSheet
-        open={menuOpen}
-        title="Menu"
-        onClose={() => setMenuOpen(false)}
-      >
-        <Link
-          href="/setup"
-          onClick={() => setMenuOpen(false)}
-          className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
-        >
-          Baby setup
-        </Link>
-        <a
-          href="/api/health"
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left text-base font-semibold text-white"
-        >
-          Connection health
-        </a>
-        <div className="pt-1 text-xs text-zinc-400">
-          More settings will live here (tenant, invites, baby selector, etc.).
-        </div>
-      </BottomSheet>
     </div>
   );
 }

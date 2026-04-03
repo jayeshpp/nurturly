@@ -9,6 +9,7 @@ export type FeedMeta = {
   paused_at: string | null;
   paused_total_ms: number;
   note?: string;
+  note_tags?: string[];
 };
 
 export type MotionMeta = {
@@ -21,20 +22,27 @@ export function getFeedMeta(metadata: EventMetadata | null | undefined): FeedMet
   const paused_at = typeof m.paused_at === "string" ? m.paused_at : null;
   const paused_total_ms = typeof m.paused_total_ms === "number" ? m.paused_total_ms : 0;
   const note = typeof m.note === "string" ? m.note : undefined;
+  const note_tags = Array.isArray(m.note_tags)
+    ? m.note_tags.filter((v) => typeof v === "string")
+    : undefined;
 
-  return { side, paused_at, paused_total_ms, note };
+  return { side, paused_at, paused_total_ms, note, note_tags };
 }
 
 export function setFeedMeta(
   metadata: EventMetadata | null | undefined,
-  patch: Partial<Pick<FeedMeta, "paused_at" | "paused_total_ms" | "note">>
+  patch: Partial<
+    Pick<FeedMeta, "side" | "paused_at" | "paused_total_ms" | "note" | "note_tags">
+  >
 ): EventMetadata {
   const base = asRecord(metadata);
   const next: Record<string, unknown> = { ...base };
 
+  if ("side" in patch) next.side = patch.side;
   if ("paused_at" in patch) next.paused_at = patch.paused_at ?? null;
   if ("paused_total_ms" in patch) next.paused_total_ms = patch.paused_total_ms ?? 0;
   if ("note" in patch) next.note = patch.note;
+  if ("note_tags" in patch) next.note_tags = patch.note_tags;
 
   return next;
 }

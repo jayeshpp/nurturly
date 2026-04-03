@@ -133,14 +133,14 @@ export async function logMotion(kind: MotionKind) {
   return event;
 }
 
-export async function startFeed(side: FeedSide) {
+export async function startFeed() {
   const ctx = await getContext();
   const event = newLocalEvent({
     ...ctx,
     type: "feed",
     start_time: nowIsoUtc(),
     end_time: null,
-    metadata: { side, paused_at: null, paused_total_ms: 0 },
+    metadata: { paused_at: null, paused_total_ms: 0 },
   });
   await db.events.put(event);
   void trySyncEvent(event.id);
@@ -180,7 +180,7 @@ export async function resumeFeed(activeFeedId: string) {
   void trySyncEvent(activeFeedId);
 }
 
-export async function endFeed(activeFeedId: string) {
+export async function endFeed(activeFeedId: string, side?: FeedSide) {
   const end_time = nowIsoUtc();
   const feed = await db.events.get(activeFeedId);
   if (!feed) return;
@@ -193,7 +193,11 @@ export async function endFeed(activeFeedId: string) {
   await db.events.update(activeFeedId, {
     end_time,
     metadata: feed.type === "feed"
-      ? setFeedMeta(feed.metadata, { paused_at: null, paused_total_ms: paused_total_ms + extraPaused })
+      ? setFeedMeta(feed.metadata, {
+          side,
+          paused_at: null,
+          paused_total_ms: paused_total_ms + extraPaused,
+        })
       : feed.metadata,
     updated_at: nowIsoUtc(),
     sync_status: "pending",
@@ -202,26 +206,22 @@ export async function endFeed(activeFeedId: string) {
   void trySyncEvent(activeFeedId);
 }
 
-export async function setFeedNote(feedId: string, note: string | null) {
+export async function setFeedNoteDraft(feedId: string, draft: { note: string; tags: string[] }) {
   const feed = await db.events.get(feedId);
   if (!feed || feed.type !== "feed" || feed.deleted_at !== null) return;
 
-  const trimmed = note?.trim() ?? "";
+  const note = draft.note.trim();
+  const tags = Array.from(new Set(draft.tags.map((t) => t.trim()).filter(Boolean)));
+
   await db.events.update(feedId, {
-    metadata: setFeedMeta(feed.metadata, { note: trimmed.length > 0 ? trimmed : undefined }),
+    metadata: setFeedMeta(feed.metadata, {
+      note: note.length > 0 ? note : undefined,
+      note_tags: tags.length > 0 ? tags : undefined,
+    }),
     updated_at: nowIsoUtc(),
     sync_status: "pending",
     last_error: null,
   });
   void trySyncEvent(feedId);
-}
-
-export async function appendFeedNote(feedId: string, snippet: string) {
-  const feed = await db.events.get(feedId);
-  if (!feed || feed.type !== "feed" || feed.deleted_at !== null) return;
-
-  const cur = getFeedMeta(feed.metadata).note ?? "";
-  const next = cur.trim().length > 0 ? `${cur.trim()}; ${snippet}` : snippet;
-  await setFeedNote(feedId, next);
 }
 

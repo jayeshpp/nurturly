@@ -9,13 +9,12 @@ import { db } from "@/lib/db";
 import { getFeedMeta } from "@/lib/event-metadata";
 import { hapticLight } from "@/lib/haptics";
 import {
-  appendFeedNote,
   endFeed,
   logMotion,
   logPee,
   pauseFeed,
   resumeFeed,
-  setFeedNote,
+  setFeedNoteDraft,
   startFeed,
   syncPendingEvents,
 } from "@/lib/offline/events";
@@ -34,9 +33,10 @@ function timeAgoShort(ms: number) {
 
 export default function DashboardClient() {
   const [motionOpen, setMotionOpen] = useState(false);
-  const [feedOpen, setFeedOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  const [noteTagsDraft, setNoteTagsDraft] = useState<string[]>([]);
   const [peeCooldownUntilMs, setPeeCooldownUntilMs] = useState<number | null>(
     null
   );
@@ -132,6 +132,11 @@ export default function DashboardClient() {
     return getFeedMeta(activeFeed.metadata).note ?? "";
   }, [activeFeed]);
 
+  const activeFeedNoteTags = useMemo(() => {
+    if (!activeFeed) return [];
+    return getFeedMeta(activeFeed.metadata).note_tags ?? [];
+  }, [activeFeed]);
+
   useEffect(() => {
     void syncPendingEvents();
     const onOnline = () => void syncPendingEvents();
@@ -175,20 +180,24 @@ export default function DashboardClient() {
     await logPee();
   }
 
-  async function onStartFeed(side: FeedSide) {
+  async function onStartFeed() {
     hapticLight();
     if (activeFeed) {
-      setFeedOpen(false);
       return;
     }
-    await startFeed(side);
-    setFeedOpen(false);
+    await startFeed();
   }
 
-  async function onEndFeed() {
+  function openEnd() {
+    if (!activeFeed) return;
+    setEndOpen(true);
+  }
+
+  async function onEndWithSide(side: FeedSide) {
     if (!activeFeed) return;
     hapticLight();
-    await endFeed(activeFeed.id);
+    await endFeed(activeFeed.id, side);
+    setEndOpen(false);
   }
 
   async function onPauseFeed() {
@@ -206,21 +215,21 @@ export default function DashboardClient() {
   function openNote() {
     if (!activeFeed) return;
     setNoteDraft(activeFeedNote);
+    setNoteTagsDraft(activeFeedNoteTags);
     setNoteOpen(true);
   }
 
   async function onSaveNote() {
     if (!activeFeed) return;
     hapticLight();
-    await setFeedNote(activeFeed.id, noteDraft);
+    await setFeedNoteDraft(activeFeed.id, { note: noteDraft, tags: noteTagsDraft });
     setNoteOpen(false);
   }
 
-  async function onQuickNote(snippet: string) {
-    if (!activeFeed) return;
-    hapticLight();
-    await appendFeedNote(activeFeed.id, snippet);
-    setNoteOpen(false);
+  function toggleTag(tag: string) {
+    setNoteTagsDraft((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
   }
 
   async function onMotion(kind: MotionKind) {
@@ -270,13 +279,17 @@ export default function DashboardClient() {
                     Paused
                   </div>
                 ) : null}
-                {activeFeedNote ? (
+                {activeFeedNote || activeFeedNoteTags.length > 0 ? (
                   <div className="text-xs font-medium text-zinc-400">
                     Note:{" "}
-                    <span className="text-zinc-200">
-                      {activeFeedNote.length > 44
-                        ? `${activeFeedNote.slice(0, 44)}…`
-                        : activeFeedNote}
+                    <span className="text-zinc-200 break-words whitespace-normal">
+                      {(() => {
+                        const parts = [
+                          ...(activeFeedNoteTags ?? []),
+                          ...(activeFeedNote ? [activeFeedNote] : []),
+                        ];
+                        return parts.join(" • ");
+                      })()}
                     </span>
                   </div>
                 ) : null}
@@ -304,7 +317,7 @@ export default function DashboardClient() {
                   </button>
                 )}
                 <button
-                  onClick={onEndFeed}
+                  onClick={openEnd}
                   className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black active:scale-[0.99]"
                 >
                   End
@@ -322,7 +335,7 @@ export default function DashboardClient() {
                 </div>
               </div>
               <button
-                onClick={() => setFeedOpen(true)}
+                onClick={() => void onStartFeed()}
                 className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-black active:scale-[0.99]"
               >
                 Start feed
@@ -347,8 +360,8 @@ export default function DashboardClient() {
 
           <BigButton
             label={activeFeed ? "🛑 End Feed" : "🍼 Start Feed"}
-            subLabel={activeFeed ? "tap to stop" : "choose side"}
-            onClick={() => (activeFeed ? void onEndFeed() : setFeedOpen(true))}
+            subLabel={activeFeed ? "choose side to end" : "1 tap"}
+            onClick={() => (activeFeed ? openEnd() : void onStartFeed())}
           />
         </section>
 
@@ -402,37 +415,30 @@ export default function DashboardClient() {
         </button>
       </BottomSheet>
 
-      <BottomSheet
-        open={feedOpen}
-        title="Start feed"
-        onClose={() => setFeedOpen(false)}
-      >
+      <BottomSheet open={endOpen} title="End feed" onClose={() => setEndOpen(false)}>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => void onEndWithSide("left")}
+            className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+          >
+            Left
+          </button>
+          <button
+            onClick={() => void onEndWithSide("right")}
+            className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+          >
+            Right
+          </button>
+        </div>
         <button
-          disabled={Boolean(activeFeed)}
-          onClick={() => void onStartFeed("left")}
-          className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black disabled:opacity-40"
-        >
-          Left
-        </button>
-        <button
-          disabled={Boolean(activeFeed)}
-          onClick={() => void onStartFeed("right")}
-          className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black disabled:opacity-40"
-        >
-          Right
-        </button>
-        <button
-          disabled={Boolean(activeFeed)}
-          onClick={() => void onStartFeed("both")}
-          className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black disabled:opacity-40"
+          onClick={() => void onEndWithSide("both")}
+          className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
         >
           Both
         </button>
-        {activeFeed ? (
-          <div className="pt-1 text-xs text-zinc-400">
-            You already have an active feed. End it first.
-          </div>
-        ) : null}
+        <div className="pt-1 text-xs text-zinc-400">
+          Pick a side to end this feed. (You can edit notes later in Reports.)
+        </div>
       </BottomSheet>
 
       <BottomSheet
@@ -443,26 +449,46 @@ export default function DashboardClient() {
         <div className="grid gap-2">
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => void onQuickNote("Crying")}
-              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+              onClick={() => toggleTag("Crying")}
+              className={[
+                "ripple rounded-2xl px-4 py-4 text-left text-base font-semibold",
+                noteTagsDraft.includes("Crying")
+                  ? "bg-white text-black"
+                  : "border border-zinc-700 bg-zinc-950 text-white",
+              ].join(" ")}
             >
               Crying
             </button>
             <button
-              onClick={() => void onQuickNote("Fussy")}
-              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+              onClick={() => toggleTag("Fussy")}
+              className={[
+                "ripple rounded-2xl px-4 py-4 text-left text-base font-semibold",
+                noteTagsDraft.includes("Fussy")
+                  ? "bg-white text-black"
+                  : "border border-zinc-700 bg-zinc-950 text-white",
+              ].join(" ")}
             >
               Fussy
             </button>
             <button
-              onClick={() => void onQuickNote("Spit up")}
-              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+              onClick={() => toggleTag("Spit up")}
+              className={[
+                "ripple rounded-2xl px-4 py-4 text-left text-base font-semibold",
+                noteTagsDraft.includes("Spit up")
+                  ? "bg-white text-black"
+                  : "border border-zinc-700 bg-zinc-950 text-white",
+              ].join(" ")}
             >
               Spit up
             </button>
             <button
-              onClick={() => void onQuickNote("Good latch")}
-              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
+              onClick={() => toggleTag("Good latch")}
+              className={[
+                "ripple rounded-2xl px-4 py-4 text-left text-base font-semibold",
+                noteTagsDraft.includes("Good latch")
+                  ? "bg-white text-black"
+                  : "border border-zinc-700 bg-zinc-950 text-white",
+              ].join(" ")}
             >
               Good latch
             </button>
@@ -480,7 +506,8 @@ export default function DashboardClient() {
             <button
               onClick={() => {
                 setNoteDraft("");
-                if (activeFeed) void setFeedNote(activeFeed.id, null);
+                setNoteTagsDraft([]);
+                if (activeFeed) void setFeedNoteDraft(activeFeed.id, { note: "", tags: [] });
                 setNoteOpen(false);
               }}
               className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left text-base font-semibold text-white"

@@ -9,6 +9,7 @@ export type EventMetadata =
       paused_at?: string | null;
       paused_total_ms?: number;
       note?: string;
+      note_tags?: string[];
     }
   | { kind?: MotionKind }
   | Record<string, unknown>;
