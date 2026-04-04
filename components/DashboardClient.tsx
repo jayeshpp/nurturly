@@ -175,7 +175,7 @@ export default function DashboardClient() {
 
   async function onPee() {
     if (peeCooldownUntilMs && Date.now() < peeCooldownUntilMs) return;
-    setPeeCooldownUntilMs(Date.now() + 10_000);
+    setPeeCooldownUntilMs(Date.now() + 3_000);
     hapticLight();
     await logPee();
   }
@@ -347,7 +347,7 @@ export default function DashboardClient() {
         <section className="grid gap-3">
           <BigButton
             label="💧 Pee"
-            subLabel={peeDisabled ? "Saved • wait 10s" : "1 tap"}
+            subLabel={peeDisabled ? "Saved • wait 5s" : "1 tap"}
             onClick={onPee}
             disabled={peeDisabled}
           />
