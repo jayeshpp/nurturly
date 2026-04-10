@@ -1,4 +1,4 @@
-import type { EventMetadata, FeedSide, MotionKind } from "@/lib/types";
+import type { EventMetadata, FeedSide, MotionAmount, MotionKind } from "@/lib/types";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -14,6 +14,7 @@ export type FeedMeta = {
 
 export type MotionMeta = {
   kind?: MotionKind;
+  amount?: MotionAmount;
 };
 
 export function getFeedMeta(metadata: EventMetadata | null | undefined): FeedMeta {
@@ -50,6 +51,10 @@ export function setFeedMeta(
 export function getMotionMeta(metadata: EventMetadata | null | undefined): MotionMeta {
   const m = asRecord(metadata);
   const kind = typeof m.kind === "string" ? (m.kind as MotionKind) : undefined;
-  return { kind };
+  const amount =
+    m.amount === "small" || m.amount === "medium" || m.amount === "large"
+      ? m.amount
+      : undefined;
+  return { kind, amount };
 }
 

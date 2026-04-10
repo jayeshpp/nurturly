@@ -341,12 +341,22 @@ function Row({
 
   const feedMeta = e.type === "feed" ? getFeedMeta(e.metadata) : null;
   const motionMeta = e.type === "motion" ? getMotionMeta(e.metadata) : null;
+  const motionAmountLabel = motionMeta?.amount
+    ? motionMeta.amount.slice(0, 1).toUpperCase() + motionMeta.amount.slice(1)
+    : null;
+  const motionKindLabel = motionMeta?.kind
+    ? motionMeta.kind.slice(0, 1).toUpperCase() + motionMeta.kind.slice(1)
+    : null;
 
   const label =
     e.type === "pee"
       ? "Pee"
       : e.type === "motion"
-        ? `Motion${motionMeta?.kind ? ` (${motionMeta.kind})` : ""}`
+        ? `Motion${
+            motionKindLabel || motionAmountLabel
+              ? ` (${[motionKindLabel, motionAmountLabel].filter(Boolean).join(", ")})`
+              : ""
+          }`
         : `Feed${feedMeta?.side ? ` (${feedMeta.side})` : ""}`;
 
   return (

@@ -19,7 +19,69 @@ import {
   syncPendingEvents,
 } from "@/lib/offline/events";
 import { dayRangeUtcIso, formatDurationMs } from "@/lib/date";
-import type { FeedSide, MotionKind } from "@/lib/types";
+import type { FeedSide, MotionAmount, MotionKind } from "@/lib/types";
+
+function titleCase(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function MotionPicker({
+  onPick,
+}: {
+  onPick: (kind: MotionKind, amount: MotionAmount) => void;
+}) {
+  const [amount, setAmount] = useState<MotionAmount>("medium");
+  const kinds: MotionKind[] = ["normal", "liquid", "hard"];
+  const amounts: MotionAmount[] = ["small", "medium", "large"];
+
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-2">
+        <div className="text-xs font-semibold tracking-wide text-zinc-400">
+          Amount
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {amounts.map((a) => {
+            const active = a === amount;
+            return (
+              <button
+                key={a}
+                type="button"
+                onClick={() => setAmount(a)}
+                className={[
+                  "rounded-2xl px-4 py-4 text-left text-base font-semibold active:scale-[0.99]",
+                  active
+                    ? "bg-white text-black"
+                    : "border border-zinc-700 bg-zinc-950 text-white",
+                ].join(" ")}
+              >
+                {titleCase(a)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        <div className="text-xs font-semibold tracking-wide text-zinc-400">
+          Type
+        </div>
+        <div className="grid gap-2">
+          {kinds.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => onPick(k, amount)}
+              className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black active:scale-[0.99]"
+            >
+              {titleCase(k)}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function timeAgoShort(ms: number) {
   const totalMin = Math.max(0, Math.floor(ms / 60000));
@@ -137,6 +199,8 @@ export default function DashboardClient() {
     return getFeedMeta(activeFeed.metadata).note_tags ?? [];
   }, [activeFeed]);
 
+  const hasActiveFeed = Boolean(activeFeed);
+
   useEffect(() => {
     void syncPendingEvents();
     const onOnline = () => void syncPendingEvents();
@@ -149,10 +213,10 @@ export default function DashboardClient() {
   }, []);
 
   useEffect(() => {
-    const intervalMs = activeFeed ? 1000 : 30_000;
+    const intervalMs = hasActiveFeed ? 1000 : 30_000;
     const t = window.setInterval(() => setNowMs(Date.now()), intervalMs);
     return () => window.clearInterval(t);
-  }, [Boolean(activeFeed)]);
+  }, [hasActiveFeed]);
 
   if (!ctx?.baby_id) {
     return (
@@ -232,9 +296,9 @@ export default function DashboardClient() {
     );
   }
 
-  async function onMotion(kind: MotionKind) {
+  async function onMotion(kind: MotionKind, amount: MotionAmount) {
     hapticLight();
-    await logMotion(kind);
+    await logMotion(kind, amount);
     setMotionOpen(false);
   }
 
@@ -395,24 +459,7 @@ export default function DashboardClient() {
         title="Motion"
         onClose={() => setMotionOpen(false)}
       >
-        <button
-          onClick={() => void onMotion("normal")}
-          className="rounded-2xl bg-white px-4 py-4 text-left text-base font-semibold text-black"
-        >
-          Normal
-        </button>
-        <button
-          onClick={() => void onMotion("liquid")}
-          className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left text-base font-semibold text-white"
-        >
-          Liquid
-        </button>
-        <button
-          onClick={() => void onMotion("hard")}
-          className="rounded-2xl border border-zinc-700 bg-zinc-950 px-4 py-4 text-left text-base font-semibold text-white"
-        >
-          Hard
-        </button>
+        <MotionPicker onPick={(kind, amount) => void onMotion(kind, amount)} />
       </BottomSheet>
 
       <BottomSheet open={endOpen} title="End feed" onClose={() => setEndOpen(false)}>

@@ -1,6 +1,7 @@
 export type EventType = "feed" | "pee" | "motion";
 
 export type MotionKind = "liquid" | "normal" | "hard";
+export type MotionAmount = "small" | "medium" | "large";
 export type FeedSide = "left" | "right" | "both";
 
 export type EventMetadata =
@@ -11,7 +12,7 @@ export type EventMetadata =
       note?: string;
       note_tags?: string[];
     }
-  | { kind?: MotionKind }
+  | { kind?: MotionKind; amount?: MotionAmount }
   | Record<string, unknown>;
 
 export type LocalSyncStatus = "pending" | "synced" | "error";

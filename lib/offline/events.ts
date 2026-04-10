@@ -3,7 +3,14 @@ import { hasSupabaseEnv } from "@/lib/env";
 import { getFeedMeta, setFeedMeta } from "@/lib/event-metadata";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { nowIsoUtc } from "@/lib/time";
-import type { EventMetadata, EventType, LocalEvent, MotionKind, FeedSide } from "@/lib/types";
+import type {
+  EventMetadata,
+  EventType,
+  LocalEvent,
+  MotionAmount,
+  MotionKind,
+  FeedSide,
+} from "@/lib/types";
 
 async function getRequiredSetting(key: string) {
   const row = await db.settings.get(key);
@@ -119,14 +126,14 @@ export async function logPee() {
   return event;
 }
 
-export async function logMotion(kind: MotionKind) {
+export async function logMotion(kind: MotionKind, amount: MotionAmount) {
   const ctx = await getContext();
   const event = newLocalEvent({
     ...ctx,
     type: "motion",
     start_time: nowIsoUtc(),
     end_time: nowIsoUtc(),
-    metadata: { kind },
+    metadata: { kind, amount },
   });
   await db.events.put(event);
   void trySyncEvent(event.id);
