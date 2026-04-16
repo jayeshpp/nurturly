@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { PwaInstallHint } from "@/components/PwaInstallHint";
 
 function HomeIcon({ active }: { active: boolean }) {
   return (
@@ -86,7 +87,20 @@ function NavLink({
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  const showNav = useMemo(() => pathname !== "/", [pathname]);
+  const showNav = useMemo(() => {
+    if (!pathname) return false;
+    if (pathname === "/") return false;
+    if (pathname.startsWith("/onboarding")) return false;
+    if (pathname.startsWith("/setup")) return false;
+    return true;
+  }, [pathname]);
+  const showInstallHint = useMemo(() => {
+    if (!pathname) return false;
+    if (pathname === "/") return false;
+    if (pathname.startsWith("/onboarding")) return false;
+    if (pathname.startsWith("/setup")) return false;
+    return true;
+  }, [pathname]);
   const active = useMemo(() => {
     if (pathname?.startsWith("/reports")) return "reports";
     return "home";
@@ -95,6 +109,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-screen bg-black text-white">
       <div className={showNav ? "pb-32" : ""}>{children}</div>
+
+      {showInstallHint ? <PwaInstallHint /> : null}
 
       {showNav ? (
         <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom)+16px)]">
